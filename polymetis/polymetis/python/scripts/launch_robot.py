@@ -39,6 +39,8 @@ def main(cfg):
     # Start server
     log.info(f"Starting server")
     server_exec_path = which(cfg.server_exec)
+    log.info(f"Server executable path: {server_exec_path}")
+
     server_cmd = [server_exec_path]
     server_cmd = server_cmd + ["-s", ip, "-p", port]
 
@@ -47,6 +49,7 @@ def main(cfg):
         subprocess.run(["sudo", "echo", '"Acquired sudo."'], check=True)
 
         server_cmd = ["sudo", "-s", "env", '"PATH=$PATH"'] + server_cmd + ["-r"]
+        log.info(f"Server command: {' '.join(server_cmd)}")
     server_output = subprocess.Popen(
         server_cmd, stdout=sys.stdout, stderr=sys.stderr, preexec_fn=os.setpgrp
     )
@@ -81,6 +84,7 @@ def main(cfg):
 
         log.info(f"Starting robot client...")
         client = hydra.utils.instantiate(cfg.robot_client)
+        log.info(f"Instantiating client from: {cfg.robot_client}")
         client.run()
 
     else:

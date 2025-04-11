@@ -4,6 +4,7 @@
 #include <string>
 #include <thread>
 #include <time.h>
+#include <franka/exception.h>
 
 #include <grpc/grpc.h>
 
@@ -69,8 +70,14 @@ void FrankaHandClient::applyGripperCommand(void) {
   } else {
     spdlog::info("Moving to width {} at speed={}", gripper_cmd_.width(),
                  gripper_cmd_.speed());
-    prev_cmd_successful_ =
-        gripper_->move(gripper_cmd_.width(), gripper_cmd_.speed());
+    try{prev_cmd_successful_ =
+      gripper_->move(gripper_cmd_.width(), gripper_cmd_.speed());}
+      catch (const franka::Exception& e) {
+        // 捕获异常并打印警告
+        spdlog::warn("Gripper command exception: {}", e.what());
+    }
+
+    
   }
 
   is_moving_ = false;
@@ -91,16 +98,67 @@ void FrankaHandClient::run(void) {
     grpc::ClientContext context;
     status_ = stub_->ControlUpdate(&context, gripper_state_, &gripper_cmd_);
 
+    // if (!is_moving_) {
+    //   // Skip if command not updated
+    //   timestamp_ns = gripper_cmd_.timestamp().nanos();
+    //   if (timestamp_ns != prev_cmd_timestamp_ns_ && timestamp_ns) {
+    //     // applyGripperCommand() in separate thread
+    //     std::thread th(&FrankaHandClient::applyGripperCommand, this);
+    //     th.detach();
+    //     prev_cmd_timestamp_ns_ = timestamp_ns;
+    //   }
+    // }
+
     if (!is_moving_) {
       // Skip if command not updated
       timestamp_ns = gripper_cmd_.timestamp().nanos();
       if (timestamp_ns != prev_cmd_timestamp_ns_ && timestamp_ns) {
-        // applyGripperCommand() in separate thread
-        std::thread th(&FrankaHandClient::applyGripperCommand, this);
-        th.detach();
-        prev_cmd_timestamp_ns_ = timestamp_ns;
+          // applyGripperCommand() in separate thread
+          std::thread th([this]() {
+              try {
+                  applyGripperCommand();  // 执行指令
+              } catch (const franka::Exception& e) {
+                  // 捕获异常并打印警告
+                  spdlog::warn("Gripper command exception: {}", e.what());
+              } catch (const std::exception& e) {
+                  // 捕获其他标准异常
+                  spdlog::warn("Standard exception: {}", e.what());
+              } 
+          });
+          th.detach();  // 分离线程，允许继续执行
+          prev_cmd_timestamp_ns_ = timestamp_ns;
       }
-    }
+  }
+  
+    // if (!is_moving_) {
+    //   timestamp_ns = gripper_cmd_.timestamp().nanos();
+      
+    //   // 只有在 timestamp 变了 && 有效命令（timestamp != 0）
+    //   if (timestamp_ns != prev_cmd_timestamp_ns_ && timestamp_ns) {
+    //     // 备份当前命令
+    //     GripperCommand cached_cmd = gripper_cmd_;
+    
+    //     // 单独开线程执行
+    //     std::thread th([this, cached_cmd, timestamp_ns]() {
+    //       try {
+    //         gripper_cmd_ = cached_cmd;
+    //         applyGripperCommand();
+    //         if (prev_cmd_successful_) {
+    //           // ✅ 只有执行成功才更新 timestamp
+    //           prev_cmd_timestamp_ns_ = timestamp_ns;
+    //         } else {
+    //           spdlog::warn("Gripper command failed, will retry on next update");
+    //         }
+    //       } catch (const franka::Exception& e) {
+    //         spdlog::warn("Gripper command exception: {}", e.what());
+    //       }
+    //       // prev_cmd_timestamp_ns_ = timestamp_ns;
+    //     });
+    //     th.detach();
+    //     prev_cmd_timestamp_ns_ = timestamp_ns;
+    //   }
+    // }
+
 
     // Spin once
     abs_target_time.tv_nsec += period_ns;

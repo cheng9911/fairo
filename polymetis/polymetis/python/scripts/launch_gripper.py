@@ -4,7 +4,7 @@
 
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-
+import subprocess
 import os
 import time
 import logging
@@ -43,7 +43,14 @@ def main(cfg):
 
         # Run client
         gripper_client = hydra.utils.instantiate(cfg.gripper)
-        gripper_client.run()
+        try:
+            gripper_client.run()
+        except subprocess.CalledProcessError as e:
+            print(f"[Subprocess failed] Command: {e.cmd}")
+            print(f"Return code: {e.returncode}")
+            print(f"Output: {e.output}")
+         
+        
 
 
 if __name__ == "__main__":
